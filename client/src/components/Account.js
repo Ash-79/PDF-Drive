@@ -16,7 +16,7 @@ export default function Account() {
     setuser(null);
     setpdfready(false);
     setPdfs([]);
-    navigate("/");
+    navigate("/register");
   }
 
   // If there is no user, navigate to the register page

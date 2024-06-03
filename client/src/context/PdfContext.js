@@ -18,7 +18,6 @@ export const PdfProvider = ({ children }) => {
           setPdfs(data.pdfs);
           setpdfready(true);
         });
-        console.log(pdfs);
       } catch (error) {
         console.log("Error fetching PDFs");
       }

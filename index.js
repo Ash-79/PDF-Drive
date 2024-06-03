@@ -36,20 +36,7 @@ let gfs;
 
 let filename = "";
 
-// setting up google cloud storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads");
-  },
-  filename: (req, file, cb) => {
-    filename = Date.now() + "#" + file.originalname;
-    cb(null, filename);
-  },
-});
-
-const upload = multer({
-  storage: storage,
-});
+const upload = multer();
 
 const gStorage = new Storage({
   projectId: "pdf-cloud-storage",
@@ -62,36 +49,60 @@ const gStorage = new Storage({
 const bucketName = "pdf-cloud";
 
 // upload pdf to the cloudwith encrypted filename
-async function uploadToCloud(uniqueLink) {
+async function uploadToCloud(fileBuffer, filename) {
   try {
-    await gStorage.bucket(bucketName).upload(`uploads/${filename}`, {
-      destination: `${uniqueLink}.pdf`,
-      gzip: true,
+    const bucket = gStorage.bucket(bucketName);
+    const file = bucket.file(`${filename}.pdf`);
+
+    const blobStream = file.createWriteStream({
       metadata: {
+        contentType: 'application/pdf',
         cacheControl: "public, max-age=31536000",
       },
+      gzip: true,
     });
+
+    blobStream.on('error', (error) => {
+      console.error(`Failed to upload ${filename}.pdf to ${bucketName}:`, error);
+    });
+
+    blobStream.on('finish', () => {
+      console.log(`Successfully uploaded ${filename}.pdf to ${bucketName}`);
+    });
+
+    blobStream.end(fileBuffer);
+
   } catch (error) {
     console.error(`Failed to upload ${filename} to ${bucketName}:`, error);
   }
 }
 
 // upload to local storage
-app.post("/upload", upload.single("pdf"), async (req, res) => {
+app.post("/upload", upload.single('pdf'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    const { userId } = req.body;
-    const uniqueLink = crypto.randomBytes(16).toString("hex");
+    const { token } = req.cookies;
+    if (token) {
+      jwt.verify(token, jwtSecret, async (err, user) => {
+        if (err) throw err;
 
-    await uploadToCloud(uniqueLink);
+        const fileBuffer = req.file.buffer;
+        filename = Date.now() + "#" + req.file.originalname;
 
-    const pdf = new Pdf({ userId, filename, uniqueLink });
-    await pdf.save();
+        const uniqueLink = crypto.randomBytes(15).toString('hex');
+      
+        await uploadToCloud(fileBuffer, uniqueLink);
 
-    res.status(201).json({ message: "PDF uploaded successfully", pdf });
+        const newPdf = new Pdf({ userId: user.id, filename, uniqueLink });
+        await newPdf.save();
+
+        res.status(201).json({ message: "PDF uploaded successfully", newPdf });
+      });
+    } else
+      res.status(401).json({ message: "please login first to perform tasks" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -118,26 +129,32 @@ app.get("/pdfs", async (req, res) => {
 });
 
 // To view a PDf by current user
-app.get("/pdf/:pdfname", async (req, res) => {
+app.get("/pdf/:filename", async (req, res) => {
   try {
     const { token } = req.cookies;
     if (token) {
-      jwt.verify(token, jwtSecret, async (err, user) => {
-        if (err) throw err;
+      // jwt.verify(token, jwtSecret, async (err, user) => {
+      //   if (err) throw err;
 
-        let pdfname = decodeURIComponent(req.params.pdfname); // Decode the PDF name
-        let file = fs.createReadStream(`./uploads/${pdfname}`);
-        let stat = fs.statSync(`./uploads/${pdfname}`);
-        res.setHeader("Content-Length", stat.size);
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader(
-          "Content-Disposition",
-          `inline; filename=${pdfname.split("#")[1]}`
-        );
-        file.pipe(res);
-      });
-    } else
+        const decodedfilename = decodeURIComponent(req.params.filename);
+        const pdf = await Pdf.findOne({filename: decodedfilename});
+        // Reference to the file
+        const bucket = gStorage.bucket(bucketName);
+        const file = bucket.file(`${pdf.uniqueLink}.pdf`);
+
+        res.setHeader('Content-Type', 'application/pdf');
+
+        const readStream = file.createReadStream();
+
+        readStream.on('error', err => {
+          res.status(500).send(err);
+        });
+
+        readStream.pipe(res);
+      // });
+    } else {
       res.status(401).json({ message: "please login first to perform tasks" });
+    }
   } catch (error) {
     res
       .status(500)
@@ -263,7 +280,7 @@ app.get("/getComments/:_id", async (req, res) => {
 //base url
 app.get("/", (req, res) => {
   app.use(express.static(path.resolve(__dirname, "client", "build")));
-  res.sendFile(path.resolve(__dirname, "client", "build", "index.html"));
+  res.sendFile(path.resolve(__dirname, "client", "build", "index.html")); 
 });
 
 // Handles user registration.
@@ -310,8 +327,13 @@ app.get("/profile", (req, res) => {
   if (token) {
     jwt.verify(token, jwtSecret, async (err, user) => {
       if (err) throw err;
-      const { name, email, _id } = await User.findById(user.id);
-      res.json({ name, email, _id });
+      const foundUser = await User.findById(user.id);
+      if (foundUser) {
+        const { name, email, _id } = foundUser;
+        res.json({ name, email, _id });
+      } else {
+        res.status(404).json({ message: "User not found" });
+      }
     });
   } else res.json(null);
 });

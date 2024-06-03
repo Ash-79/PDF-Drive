@@ -30,13 +30,12 @@ const UploadPdf = () => {
       return;
     }
     const formData = new FormData();
-    formData.append("userId", user._id);
     formData.append("pdf", file);
 
     try {
       const response = await axios.post("/upload", formData);
       setMessage("File uploaded successfully");
-      setPdfs([...pdfs, response.data.pdf]);
+      setPdfs([...pdfs, response.data.newPdf]);
     } catch (error) {
       setMessage("Error uploading file");
     }

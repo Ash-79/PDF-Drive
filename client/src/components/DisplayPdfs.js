@@ -46,8 +46,8 @@ export default function DisplayPdfs({ search }) {
 
   // Function to filter pdfs based on search
   let filterP = () => {
-    return pdfs.filter((pdf) =>
-      pdf.filename.toLowerCase().includes(search.toLowerCase())
+    return pdfs && pdfs.filter((pdf) =>
+      pdf && pdf.filename.toLowerCase().includes(search.toLowerCase())
     );
   };
   let filteredPdfs = filterP();
@@ -60,12 +60,12 @@ export default function DisplayPdfs({ search }) {
         cache: "no-store",
         credentials: "include",
       })
-        .then((response) => response.blob())
-        .then((blob) => {
-          var url = URL.createObjectURL(blob);
-          window.open(url, "_blank");
-        })
-        .catch((error) => console.error(error));
+      .then((response) => response.blob())
+      .then((blob) => {
+        var url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+      })
+      .catch((error) => console.error("Failed to fetch signed URL:", error));
     } catch (error) {
       console.error("Failed to fetch PDF:", error);
     }
@@ -79,17 +79,15 @@ export default function DisplayPdfs({ search }) {
         cache: "no-store",
         credentials: "include",
       })
-        .then((response) => response.blob())
-        .then((blob) => {
-          let url = URL.createObjectURL(blob);
-          let link = document.createElement("a");
-          link.href = url;
-          link.download = pdfname;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-        })
-        .catch((error) => console.error(error));
+      .then((response) => response.blob())
+      .then((blob) => {
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = url;
+        link.download = pdfname;
+        link.click();
+      })
+      .catch((error) => console.error("Failed to fetch PDF:", error));
     } catch (error) {
       console.error("Failed to download PDF:", error);
     }
